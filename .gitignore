@@ -17,3 +17,6 @@ Thumbs.db
 *.pcap
 *.pcapng
 recordings/
+
+# Office / PowerPoint lock files
+~$*
