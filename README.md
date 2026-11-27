@@ -53,6 +53,12 @@ Built for rapid 24-hour assembly using a compact square PVC pipe frame (`wheelba
 
 High-level vision and network scheduling run on the **Raspberry Pi**, while real-time PWM and link-loss safety live on the **ESP32-S3**:
 
+<div align="center">
+  <img src="assets/ieee_system_architecture.png" alt="IEEE-Style System Architecture Diagram" width="95%" />
+  <br />
+  <sub><b>Figure 2:</b> IEEE-style functional block diagram showing isolated Ground Station, Onboard SBC, Real-Time Safety MCU, and Power domains.</sub>
+</div>
+
 ```mermaid
 flowchart LR
     subgraph GS["Ground Station Laptop (FastAPI + WebHUD)"]
