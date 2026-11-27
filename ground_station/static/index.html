@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>STARFORGE HW-1 | Teleoperation Ground Station</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0d1117; color: #e6edf3; }
+    header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+    .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 16px; max-width: 1200px; margin: auto; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px; }
+    img { width: 100%; border-radius: 8px; background: #000; min-height: 360px; object-fit: contain; }
+    .bar-bg { width: 100%; height: 18px; background: #21262d; border-radius: 9px; overflow: hidden; margin: 8px 0; }
+    .bar-fill { height: 100%; width: 0%; background: #3fb950; transition: width 0.2s, background 0.2s; }
+    .btn { padding: 10px 14px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #e6edf3; cursor: pointer; font-weight: 600; }
+    .btn:hover { background: #30363d; }
+    .estop { background: #da3633; border-color: #f85149; width: 100%; margin-top: 10px; }
+    .metric { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>STARFORGE HW-1</strong> — Bandwidth-Capped Teleoperation HUD</div>
+    <div id="link-badge">LINK: WAITING...</div>
+  </header>
+  <div class="grid">
+    <div class="card">
+      <img src="/video_feed" alt="Live Rover Feed" />
+      <p style="font-size:13px;color:#8b949e;">Controls: <b>W/A/S/D</b> to drive &bull; <b>Spacebar</b> for E-Stop</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;">IP-Layer Bandwidth Meter</h3>
+      <div id="bw-text" style="font-size:20px;font-weight:700;">0.0 / 250.0 kbps</div>
+      <div class="bar-bg"><div id="bw-bar" class="bar-fill"></div></div>
+      <div class="metric"><span>Video</span><span id="m-vid">0 kbps</span></div>
+      <div class="metric"><span>Telemetry</span><span id="m-tel">0 kbps</span></div>
+      <div class="metric"><span>Commands (UDP)</span><span id="m-cmd">0 kbps</span></div>
+      <div class="metric"><span>Quality Tier</span><span id="m-tier">--</span></div>
+      <div class="metric"><span>Dropped Frames</span><span id="m-drop">0</span></div>
+
+      <div style="margin-top:14px;">
+        <label style="font-size:13px;color:#8b949e;">Set Organizer Cap (kbps):</label>
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <button class="btn" onclick="setCap(250)">250</button>
+          <button class="btn" onclick="setCap(150)">150</button>
+          <button class="btn" onclick="setCap(80)">80</button>
+        </div>
+      </div>
+      <button class="btn estop" onclick="triggerEstop()">EMERGENCY STOP (SPACE)</button>
+    </div>
+  </div>
+  <script>
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    const keys = new Set();
+
+    function sendDrive() {
+      let fwd = (keys.has('w') ? 1 : 0) - (keys.has('s') ? 1 : 0);
+      let turn = (keys.has('d') ? 1 : 0) - (keys.has('a') ? 1 : 0);
+      let left = Math.max(-100, Math.min(100, (fwd + turn) * 50));
+      let right = Math.max(-100, Math.min(100, (fwd - turn) * 50));
+      if (ws.readyState === 1) ws.send(JSON.stringify({ left, right, estop: false }));
+    }
+
+    function triggerEstop() {
+      keys.clear();
+      if (ws.readyState === 1) ws.send(JSON.stringify({ left: 0, right: 0, estop: true }));
+    }
+
+    function setCap(kbps) {
+      if (ws.readyState === 1) ws.send(JSON.stringify({ cap_kbps: kbps }));
+    }
+
+    window.addEventListener('keydown', e => {
+      if (e.code === 'Space') { e.preventDefault(); triggerEstop(); return; }
+      const k = e.key.toLowerCase();
+      if ('wasd'.includes(k) && !keys.has(k)) { keys.add(k); sendDrive(); }
+    });
+    window.addEventListener('keyup', e => {
+      const k = e.key.toLowerCase();
+      if (keys.has(k)) { keys.delete(k); sendDrive(); }
+    });
+
+    ws.onmessage = (ev) => {
+      const data = JSON.parse(ev.data);
+      const u = data.usage || {};
+      const pct = Math.min(100, u.utilization_pct || 0);
+      document.getElementById('bw-text').textContent = `${u.total_kbps ?? 0} / ${u.cap_kbps ?? 250} kbps`;
+      const bar = document.getElementById('bw-bar');
+      bar.style.width = pct + '%';
+      bar.style.background = pct > 90 ? '#f85149' : pct > 75 ? '#f0883e' : '#3fb950';
+      document.getElementById('m-vid').textContent = `${u.video_kbps ?? 0} kbps`;
+      document.getElementById('m-tel').textContent = `${u.telemetry_kbps ?? 0} kbps`;
+      document.getElementById('m-cmd').textContent = `${u.command_kbps ?? 0} kbps`;
+      document.getElementById('m-tier').textContent = u.tier ?? '--';
+      document.getElementById('m-drop').textContent = u.dropped_frames ?? 0;
+      const badge = document.getElementById('link-badge');
+      badge.textContent = data.link ? 'LINK: ACTIVE' : 'LINK: LOST (SAFE STOP)';
+      badge.style.color = data.link ? '#3fb950' : '#f85149';
+    };
+  </script>
+</body>
+</html>
